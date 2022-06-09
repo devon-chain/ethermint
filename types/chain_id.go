@@ -18,8 +18,8 @@ var (
 	ethermintChainID     = regexp.MustCompile(fmt.Sprintf(`^(%s)%s(%s)%s(%s)$`, regexChainID, regexEIP155Separator, regexEIP155, regexEpochSeparator, regexEpoch))
 )
 
-// IsValidChainID returns false if the given chain identifier is incorrectly formatted.
-func IsValidChainID(chainID string) bool {
+// DefaultValidChainID returns the default valid function
+func DefaultValidChainID(chainID string) bool {
 	if len(chainID) > 48 {
 		return false
 	}
@@ -27,9 +27,22 @@ func IsValidChainID(chainID string) bool {
 	return ethermintChainID.MatchString(chainID)
 }
 
-// ParseChainID parses a string chain identifier's epoch to an Ethereum-compatible
-// chain-id in *big.Int format. The function returns an error if the chain-id has an invalid format
-func ParseChainID(chainID string) (*big.Int, error) {
+// validChainIDFunc returns the current function and can be overwritten for custom valid function
+var validChainIDFunc = DefaultValidChainID
+
+// SetValidChainIDFunc allows for chain-id's custom validation by overriding the valid
+// function used for chain-id validation.
+func SetValidChainIDFunc(fn func(chainId string) bool) {
+	validChainIDFunc = fn
+}
+
+// IsValidChainID returns false if the given chain identifier is incorrectly formatted.
+func IsValidChainID(chainID string) bool {
+	return validChainIDFunc(chainID)
+}
+
+// DefaultParseChainID returns the default parse function
+func DefaultParseChainID(chainID string) (*big.Int, error) {
 	chainID = strings.TrimSpace(chainID)
 	if len(chainID) > 48 {
 		return nil, sdkerrors.Wrapf(ErrInvalidChainID, "chain-id '%s' cannot exceed 48 chars", chainID)
@@ -47,4 +60,19 @@ func ParseChainID(chainID string) (*big.Int, error) {
 	}
 
 	return chainIDInt, nil
+}
+
+// parseChainIDFunc returns the current function and can be overwritten for custom parse function
+var parseChainIDFunc = DefaultParseChainID
+
+// SetParseChainIDFunc allows for chain-id's custom parse function by overriding the
+// function used for chain-id parse.
+func SetParseChainIDFunc(fn func(chainID string) (*big.Int, error)) {
+	parseChainIDFunc = fn
+}
+
+// ParseChainID parses a string chain identifier's epoch to an Ethereum-compatible
+// chain-id in *big.Int format. The function returns an error if the chain-id has an invalid format
+func ParseChainID(chainID string) (*big.Int, error) {
+	return parseChainIDFunc(chainID)
 }
