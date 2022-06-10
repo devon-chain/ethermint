@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/ethereum/go-ethereum/crypto"
+	"math"
 	"math/big"
 	"time"
 
@@ -313,13 +316,61 @@ func (k Keeper) EstimateGas(c context.Context, req *types.EthCallRequest) (*type
 			return false, nil, err
 		}
 
-		// pass false to not commit StateDB
-		rsp, err = k.ApplyMessageWithConfig(ctx, msg, nil, false, cfg, txConfig)
+		cacheCtx, _ := ctx.CacheContext()
+		// use cache context and pass true to commit StateDB
+		rsp, err = k.ApplyMessageWithConfig(cacheCtx, msg, nil, true, cfg, txConfig)
 		if err != nil {
 			if errors.Is(err, core.ErrIntrinsicGas) {
 				return true, nil, nil // Special case, raise gas limit
 			}
 			return true, nil, err // Bail out
+		}
+		// rsp success and hooks not nil, check tx with PostTxProcessing
+		if !rsp.Failed() && k.hooks != nil {
+			var (
+				bloom        *big.Int
+				bloomReceipt ethtypes.Bloom
+			)
+			logs := types.LogsToEthereum(rsp.Logs)
+			// Compute block bloom filter
+			if len(logs) > 0 {
+				bloom = k.GetBlockBloomTransient(ctx)
+				bloom.Or(bloom, big.NewInt(0).SetBytes(ethtypes.LogsBloom(logs)))
+				bloomReceipt = ethtypes.BytesToBloom(bloom.Bytes())
+			}
+
+			cumulativeGasUsed := rsp.GasUsed
+			if ctx.BlockGasMeter() != nil {
+				limit := ctx.BlockGasMeter().Limit()
+				consumed := ctx.BlockGasMeter().GasConsumed()
+				cumulativeGasUsed = uint64(math.Min(float64(cumulativeGasUsed+consumed), float64(limit)))
+			}
+
+			var contractAddr common.Address
+			if msg.To() == nil {
+				contractAddr = crypto.CreateAddress(msg.From(), msg.Nonce())
+			}
+
+			receipt := &ethtypes.Receipt{
+				//Type: //TODO Unable to determine the type
+				PostState:         nil,
+				Status:            ethtypes.ReceiptStatusSuccessful,
+				CumulativeGasUsed: cumulativeGasUsed,
+				Bloom:             bloomReceipt,
+				Logs:              logs,
+				TxHash:            txConfig.TxHash,
+				ContractAddress:   contractAddr,
+				GasUsed:           rsp.GasUsed,
+				BlockHash:         txConfig.BlockHash,
+				BlockNumber:       big.NewInt(ctx.BlockHeight()),
+				TransactionIndex:  txConfig.TxIndex,
+			}
+			// Only call hooks if tx executed successfully.
+			if err = k.PostTxProcessing(cacheCtx, msg, receipt); err != nil {
+				// If hooks return error, revert the whole tx.
+				rsp.VmError = sdkerrors.Wrap(types.ErrPostTxProcessing, err.Error()).Error()
+				return true, rsp, err
+			}
 		}
 		return len(rsp.VmError) > 0, rsp, nil
 	}
