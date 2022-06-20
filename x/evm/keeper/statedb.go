@@ -3,6 +3,7 @@ package keeper
 import (
 	"bytes"
 	"fmt"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"math/big"
 
 	"github.com/cosmos/cosmos-sdk/store/prefix"
@@ -115,10 +116,21 @@ func (k *Keeper) SetAccount(ctx sdk.Context, addr common.Address, account stated
 	}
 
 	codeHash := common.BytesToHash(account.CodeHash)
-
-	if ethAcct, ok := acct.(ethermint.EthAccountI); ok {
+	ethAcct, ok := acct.(ethermint.EthAccountI)
+	if ok {
 		if err := ethAcct.SetCodeHash(codeHash); err != nil {
 			return err
+		}
+	}
+
+	if !ok && account.IsContract() {
+		if baseAcct, isBaseAccount := acct.(*authtypes.BaseAccount); isBaseAccount {
+			acct = &ethermint.EthAccount{
+				BaseAccount: baseAcct,
+				CodeHash:    codeHash.Hex(),
+			}
+		} else {
+			return sdkerrors.Wrapf(types.ErrInvalidAccount, "type %T, address %s", acct, addr)
 		}
 	}
 
