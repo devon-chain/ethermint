@@ -9,11 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 )
 
-// CalculateBaseFee calculates the base fee for the current block. This is only calculated once per
-// block during BeginBlock. If the NoBaseFee parameter is enabled or below activation height, this function returns nil.
-// NOTE: This code is inspired from the go-ethereum EIP1559 implementation and adapted to Cosmos SDK-based
-// chains. For the canonical code refer to: https://github.com/ethereum/go-ethereum/blob/master/consensus/misc/eip1559.go
-func (k Keeper) CalculateBaseFee(ctx sdk.Context) *big.Int {
+// DefaultCalculateBaseFee returns the default calculate base fee function
+func DefaultCalculateBaseFee(ctx sdk.Context, k Keeper) *big.Int {
 	params := k.GetParams(ctx)
 
 	// Ignore the calculation if not enabled
@@ -86,4 +83,21 @@ func (k Keeper) CalculateBaseFee(ctx sdk.Context) *big.Int {
 		x.Sub(parentBaseFee, baseFeeDelta),
 		common.Big0,
 	)
+}
+
+// calculateBaseFeeFunc returns the current function and can be overwritten for custom calculate function
+var calculateBaseFeeFunc = DefaultCalculateBaseFee
+
+// SetCalculateBaseFeeFunc allows for calculateBaseFeeFunc function by overriding the
+// function used for base fee calculate.
+func SetCalculateBaseFeeFunc(fn func(ctx sdk.Context, k Keeper) *big.Int) {
+	calculateBaseFeeFunc = fn
+}
+
+// CalculateBaseFee calculates the base fee for the current block. This is only calculated once per
+// block during BeginBlock. If the NoBaseFee parameter is enabled or below activation height, this function returns nil.
+// NOTE: This code is inspired from the go-ethereum EIP1559 implementation and adapted to Cosmos SDK-based
+// chains. For the canonical code refer to: https://github.com/ethereum/go-ethereum/blob/master/consensus/misc/eip1559.go
+func (k Keeper) CalculateBaseFee(ctx sdk.Context) *big.Int {
+	return calculateBaseFeeFunc(ctx, k)
 }
