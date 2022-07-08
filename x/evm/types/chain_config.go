@@ -14,6 +14,9 @@ import (
 // EthereumConfig returns an Ethereum ChainConfig for EVM state transitions.
 // All the negative or nil values are converted to nil
 func (cc ChainConfig) EthereumConfig(chainID *big.Int) *params.ChainConfig {
+	mergeNetsplitBlock := getBlockValue(cc.MergeForkBlock)
+	grayGlacierBlock := mergeNetsplitBlock // TODO update after chain config added
+
 	return &params.ChainConfig{
 		ChainID:                 chainID,
 		HomesteadBlock:          getBlockValue(cc.HomesteadBlock),
@@ -31,7 +34,8 @@ func (cc ChainConfig) EthereumConfig(chainID *big.Int) *params.ChainConfig {
 		BerlinBlock:             getBlockValue(cc.BerlinBlock),
 		LondonBlock:             getBlockValue(cc.LondonBlock),
 		ArrowGlacierBlock:       getBlockValue(cc.ArrowGlacierBlock),
-		MergeForkBlock:          getBlockValue(cc.MergeForkBlock),
+		GrayGlacierBlock:        grayGlacierBlock,
+		MergeNetsplitBlock:      mergeNetsplitBlock,
 		TerminalTotalDifficulty: nil,
 		Ethash:                  nil,
 		Clique:                  nil,
